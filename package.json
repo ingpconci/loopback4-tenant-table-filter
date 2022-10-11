@@ -41,13 +41,21 @@
     "!*/__tests__"
   ],
   "peerDependencies": {
-    "@loopback/core": "^4.0.3"
+    "@loopback/core": "^4.0.3",
+    "@loopback/repository": "^5.0.3",
+    "@loopback/rest": "^12.0.3",
+    "@loopback/security": "^0.8.3",
+    "@loopback/authentication": "^9.0.3",
+    "@loopback/authentication-jwt": "^0.12.3",
+    "@loopback/authorization": "^0.12.3",
+    "debug": "^4.3.4"
   },
   "dependencies": {
     "tslib": "^2.0.0"
   },
   "devDependencies": {
     "@loopback/build": "^9.0.3",
+    "@loopback/repository": "^5.0.3",
     "source-map-support": "^0.5.21",
     "@loopback/core": "^4.0.3",
     "@loopback/testlab": "^5.0.3",
