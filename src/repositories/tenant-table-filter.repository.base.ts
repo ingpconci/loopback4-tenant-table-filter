@@ -25,7 +25,7 @@ export class TenantTableFilterRepository<
   T extends Entity & WithTenantId,
   ID,
   Relations extends object = {}
-  > extends DefaultCrudRepository<T, ID, Relations> {
+> extends DefaultCrudRepository<T, ID, Relations> {
 
 
   @inject(SecurityBindings.USER, {optional: true}) public userProfile?: UserProfile;
@@ -301,21 +301,6 @@ findOneNoTenantIdFilter
 
 
   /*
-    normalizeFilter(
-      filter?: Filter<T>,
-    ): legacy.Filter | undefined {
-      //debug('TenantTableFilterRepository.normalizeFilter: filter=', filter);
-      const filterNormalized = super.normalizeFilter(filter);
-
-      //this.getUserPermittedTenantId();
-
-      //debug('TenantTableFilterRepository.normalizeFilter: filterNormalized=', filterNormalized);
-      return filterNormalized;
-    }
-  */
-
-
-  /*
   ------------------------------------------------------------------------------
   Util
   ------------------------------------------------------------------------------
@@ -349,8 +334,6 @@ findOneNoTenantIdFilter
     /*
     Get the tenantId from JWT
     */
-    //const tenantIdInfo = this.identifyTenantFromJwt(request);
-    //debug('getUserPermittedTenantId: tenantIdInfo=', tenantIdInfo);
 
     debug('getUserPermittedTenantId: tenantIdString=', tenantIdString);
 
@@ -374,22 +357,6 @@ findOneNoTenantIdFilter
     debug('addTenantIdFilter: filter=', JSON.stringify(filter));
     const tenantId: number = this.getUserPermittedTenantId(currentUserProfile, request);
 
-    /*
-    debug('addTenantIdFilter: currentUserProfile=', currentUserProfile);
-    const userId = Number(currentUserProfile[securityId]);
-
-    debug('addTenantIdFilter: filter=', JSON.stringify(filter));
-
-    const tenantIdString = request.headers['x-tenant-id'] as string;
-    debug('addTenantIdFilter: tenantIdString=', tenantIdString);
-
-    const tenantId: number = Number.parseInt(tenantIdString);
-    if (Number.isNaN(tenantId)) {
-      const errorMsg = 'TenantId Filter Not Valid!';
-      throw new HttpErrors.BadRequest(errorMsg);
-    }
-    debug('addTenantIdFilter: tenantId=', tenantId);
-    */
 
     let filterModified: any;
 
@@ -432,20 +399,6 @@ findOneNoTenantIdFilter
     where: any): object | undefined {
     debug('appendTenantIdWhere: where=', JSON.stringify(where));
     const tenantId: number = this.getUserPermittedTenantId(currentUserProfile, request);
-    /*
-    debug('addTenantIdFilter: currentUserProfile=', currentUserProfile);
-
-
-    const tenantIdString = request.headers['x-tenant-id'] as string;
-    debug('appendTenantIdWhere: tenantIdString=', tenantIdString);
-
-    const tenantId: number = Number.parseInt(tenantIdString);
-    if (Number.isNaN(tenantId)) {
-      const errorMsg = 'TenantId Filter Not Valid!';
-      throw new HttpErrors.BadRequest(errorMsg);
-    }
-    debug('appendTenantIdWhere: tenantId=', tenantId);
-    */
 
     let whereModified: any;
 
