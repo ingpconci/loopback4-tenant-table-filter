@@ -15,7 +15,13 @@ import {SecurityBindings, securityId, UserProfile} from '@loopback/security';
 // debug
 import debugFactory from 'debug';
 
-const debug = debugFactory('loopback:tenant-table-filter');
+const debug = debugFactory('loopback:tenant-table-filter:repository');
+
+import {promisify} from 'util';
+import {TokenServiceBindings} from '../services/keys';
+import {PermittedTenant} from '../services/multitenant-jwt.service';
+const jwt = require('jsonwebtoken');
+const verifyAsync = promisify(jwt.verify);
 
 export interface WithTenantId {
   tenantId: number
@@ -30,6 +36,7 @@ export class TenantTableFilterRepository<
 
   @inject(SecurityBindings.USER, {optional: true}) public userProfile?: UserProfile;
   @inject(RestBindings.Http.REQUEST, {optional: true}) request?: Request;
+  @inject(TokenServiceBindings.TOKEN_SECRET, {optional: true}) private jwtSecret: string;
 
 
   constructor(
@@ -51,7 +58,7 @@ export class TenantTableFilterRepository<
     // ---------------------------------------------------------------------------
     // Add the tenantId field
     // ---------------------------------------------------------------------------
-    const tenantId: number = this.getUserPermittedTenantId(this.userProfile, this.request);
+    const tenantId: number = await this.getUserPermittedTenantId(this.userProfile, this.request);
     entity.tenantId = tenantId;
 
     return super.create(entity, options);
@@ -73,7 +80,7 @@ export class TenantTableFilterRepository<
     // ---------------------------------------------------------------------------
     // Filtered by tenantId field
     // ---------------------------------------------------------------------------
-    const whereModifiedWithTenantId = this.appendTenantIdWhere(this.userProfile, this.request, where);
+    const whereModifiedWithTenantId = await this.appendTenantIdWhere(this.userProfile, this.request, where);
     return super.count(whereModifiedWithTenantId, options);
   }
 
@@ -98,7 +105,7 @@ export class TenantTableFilterRepository<
     // ---------------------------------------------------------------------------
     // Filtered by tenantId field
     // ---------------------------------------------------------------------------
-    const filterModifiedWithTenantId = this.appendTenantIdFilter(this.userProfile, this.request, filter);
+    const filterModifiedWithTenantId = await this.appendTenantIdFilter(this.userProfile, this.request, filter);
     //const data = await super.find(filterModifiedWithTenantId, options);
     //return data;
     return super.find(filterModifiedWithTenantId, options);
@@ -140,7 +147,7 @@ export class TenantTableFilterRepository<
       }
     }
 
-    const filterModifiedWithTenantId = this.appendTenantIdFilter(this.userProfile, this.request, filterWithWhere);
+    const filterModifiedWithTenantId = await this.appendTenantIdFilter(this.userProfile, this.request, filterWithWhere);
     const data = await super.find(filterModifiedWithTenantId, options);
     if (data && data.length > 0) {
       return data[0];
@@ -170,7 +177,7 @@ export class TenantTableFilterRepository<
     // ---------------------------------------------------------------------------
     // Filtered by tenantId field
     // ---------------------------------------------------------------------------
-    const filterModifiedWithTenantId = this.appendTenantIdFilter(this.userProfile, this.request, filter);
+    const filterModifiedWithTenantId = await this.appendTenantIdFilter(this.userProfile, this.request, filter);
     //const data = await super.find(filterModifiedWithTenantId, options);
     const data = await super.find(filterModifiedWithTenantId, options);
     if (data && data.length > 0) {
@@ -193,12 +200,12 @@ findOneNoTenantIdFilter
   /*
   updateAll
   */
-  updateAll(dataObject: DataObject<T>, where?: Where<T>, options?: Options): Promise<Count> {
+  async updateAll(dataObject: DataObject<T>, where?: Where<T>, options?: Options): Promise<Count> {
     debug('TenantTableFilterRepository.updateAll: ');
     // ---------------------------------------------------------------------------
     // Filtered by tenantId field
     // ---------------------------------------------------------------------------
-    const whereModifiedWithTenantId = this.appendTenantIdWhere(this.userProfile, this.request, where);
+    const whereModifiedWithTenantId = await this.appendTenantIdWhere(this.userProfile, this.request, where);
     //const data = await super.find(filterModifiedWithTenantId, options);
     //return data;
     return super.updateAll(dataObject, whereModifiedWithTenantId, options);
@@ -207,7 +214,7 @@ findOneNoTenantIdFilter
   /*
   updateAllNoTenantIdFilter
   */
-  updateAllNoTenantIdFilter(dataObject: DataObject<T>, where?: Where<T>, options?: Options): Promise<Count> {
+  async updateAllNoTenantIdFilter(dataObject: DataObject<T>, where?: Where<T>, options?: Options): Promise<Count> {
     debug('TenantTableFilterRepository.updateAllNoTenantIdFilter: ');
     return super.updateAll(dataObject, where, options);
   }
@@ -224,7 +231,7 @@ findOneNoTenantIdFilter
     const filterWithWhere: any = {
       where: {id: {eq: id}},
     }
-    const filterModifiedWithTenantId = this.appendTenantIdFilter(this.userProfile, this.request, filterWithWhere);
+    const filterModifiedWithTenantId = await this.appendTenantIdFilter(this.userProfile, this.request, filterWithWhere);
     const recordCurrentTenant = await this.findOne(filterModifiedWithTenantId);
     if (!recordCurrentTenant) {
       const errorMsg = 'Updating Record Id not valid!';
@@ -270,7 +277,7 @@ findOneNoTenantIdFilter
     const filterWithWhere: any = {
       where: {id: {eq: id}},
     }
-    const filterModifiedWithTenantId = this.appendTenantIdFilter(this.userProfile, this.request, filterWithWhere);
+    const filterModifiedWithTenantId = await this.appendTenantIdFilter(this.userProfile, this.request, filterWithWhere);
     const recordCurrentTenant = await this.findOne(filterModifiedWithTenantId);
     if (!recordCurrentTenant) {
       const errorMsg = 'Deleting Record Id not valid!';
@@ -306,8 +313,11 @@ findOneNoTenantIdFilter
   ------------------------------------------------------------------------------
   */
 
-  getUserPermittedTenantId(currentUserProfile: UserProfile | undefined, request: Request | undefined): number {
+  async getUserPermittedTenantId(currentUserProfile: UserProfile | undefined, request: Request | undefined): Promise<number> {
     debug('getUserPermittedTenantId: currentUserProfile=', currentUserProfile);
+
+    let tenantId = -1;
+    //try {
 
     let userId = 0;
 
@@ -319,22 +329,126 @@ findOneNoTenantIdFilter
       throw new HttpErrors.BadRequest(errorMsg);
     }
 
-    /*
-    Get the tenantId from Header
-    */
-    let tenantIdString;
-    if (request) {
-      tenantIdString = request.headers['x-tenant-id'] as string;
-    } else {
-      const errorMsg = 'TenantId Filter Not Valid!';
+    //------------------------------------------------------------------------
+    // Get the tenantId from request Header: x-tenant-id
+    //------------------------------------------------------------------------
+    let tenantIdString: string;
+
+    if (this.request) {
+      debug('getUserPermittedTenantId: request.headers=', this.request.headers);
+      tenantIdString = this.request.headers['x-tenant-id'] as string;
+      debug('getUserPermittedTenantId: headers => tenantIdString=', tenantIdString);
+
+      if (tenantIdString !== undefined && tenantIdString.length > 0) {
+        tenantId = Number.parseInt(tenantIdString);
+        debug('getUserPermittedTenantId: headers tenantId=', tenantId);
+        if (Number.isNaN(tenantId)) {
+          const errorMsg = 'Error: tenantId from request Header Not Valid!';
+          console.error('getUserPermittedTenantId: ', errorMsg);
+          //throw new HttpErrors.BadRequest(errorMsg);
+        }
+      }
+    }
+
+    //------------------------------------------------------------------------
+    // Get the decoded token
+    //------------------------------------------------------------------------
+    let decodedToken = undefined;
+    if (this.request) {
+      const authorization = this.request.headers['authorization'] as string;
+      debug('getUserPermittedTenantId: authorization', authorization);
+      if (authorization?.startsWith('Bearer ')) {
+        //split the string into 2 parts : 'Bearer ' and the `xxx.yyy.zzz`
+        const parts = authorization.split(' ');
+        const token = parts[1];
+        debug('getUserPermittedTenantId:  JWT token', authorization);
+        try {
+          // https://www.npmjs.com/package/jsonwebtoken
+          // get the decoded payload ignoring signature, no secretOrPrivateKey needed
+          //var decoded = jwt.decode(token);
+          //const json = jwt.decode(token, {json: true});
+          decodedToken = await verifyAsync(token, this.jwtSecret);
+          debug('getUserPermittedTenantId: decodedToken=', JSON.stringify(decodedToken, undefined, 4));
+        } catch (error) {
+          throw new HttpErrors.Unauthorized(
+            `Error verifying token: ${error.message}`,
+          );
+        }
+      }
+    }
+    if (decodedToken === undefined) {
+      const errorMsg = 'authorization Token Not Valid!';
       console.error('getUserPermittedTenantId: ', errorMsg);
       throw new HttpErrors.BadRequest(errorMsg);
     }
+
+    //------------------------------------------------------------------------
+    // if tenantId non present in the header, check the token payload for defaultTenantId
+    //------------------------------------------------------------------------
+    if (tenantId === -1 && decodedToken.defaultTenantId !== undefined) {
+      tenantId = Number.parseInt(decodedToken.defaultTenantId);
+      if (Number.isNaN(tenantId)) {
+        const errorMsg = 'Error: defaultTenantId from token Not Valid!';
+        console.error('verifyToken: ', errorMsg);
+        //throw new HttpErrors.BadRequest(errorMsg);
+      }
+      debug('verifyToken: decodedToken.defaultTenantId => tenantId=', tenantId);
+    }
+
+
+
+    //------------------------------------------------------------------------
+    // Check the validity of tenantId
+    //------------------------------------------------------------------------
+    if (tenantId < 0) {
+      const errorMsg = 'TenantId Filter Not Valid!';
+      console.error('verifyToken: ', errorMsg);
+      throw new HttpErrors.BadRequest(errorMsg);
+    }
+    //------------------------------------------------------------------------
+    // Check the permission of tenantId and the roles for the currentTenantId
+    //------------------------------------------------------------------------
+    let tenantIdIsPermitted = false;
+    let currentTenantUserRoles: string[] = [];
+    // eslint-disable-next-line @typescript-eslint/prefer-for-of
+    for (let index = 0; index < decodedToken.permittedTenants.length; index++) {
+      const permittedTenant: PermittedTenant = decodedToken.permittedTenants[index];
+      debug('getUserPermittedTenantId: permittedTenant=', permittedTenant);
+      if (permittedTenant.tenantId === tenantId) {
+        debug('getUserPermittedTenantId: current selected permittedTenant=', permittedTenant);
+        tenantIdIsPermitted = true;
+        if (permittedTenant.roles) {
+          currentTenantUserRoles = currentTenantUserRoles.concat(permittedTenant.roles);
+        }
+      }
+    }
+    if (tenantIdIsPermitted === false) {
+      const errorMsg = 'TenantId Filter Not Permitted for User Id=' + decodedToken.id;
+      console.error('getUserPermittedTenantId: ', errorMsg);
+      throw new HttpErrors.BadRequest(errorMsg);
+    }
+    debug('getUserPermittedTenantId: currentTenantUserRoles=', currentTenantUserRoles);
+
+
+    /*
+    Get the tenantId from Header
+    */
+    /*
+     let tenantIdString;
+     if (request) {
+       tenantIdString = request.headers['x-tenant-id'] as string;
+     } else {
+       const errorMsg = 'TenantId Filter Not Valid!';
+       console.error('getUserPermittedTenantId: ', errorMsg);
+       throw new HttpErrors.BadRequest(errorMsg);
+     }
+     */
 
     /*
     Get the tenantId from JWT
     */
 
+    /*
     debug('getUserPermittedTenantId: tenantIdString=', tenantIdString);
 
     const tenantId: number = Number.parseInt(tenantIdString);
@@ -343,6 +457,7 @@ findOneNoTenantIdFilter
       console.error('getUserPermittedTenantId: ', errorMsg);
       throw new HttpErrors.BadRequest(errorMsg);
     }
+    */
 
 
     debug('getUserPermittedTenantId: return tenantId=', tenantId);
@@ -350,12 +465,12 @@ findOneNoTenantIdFilter
     return tenantId;
   }
 
-  appendTenantIdFilter(
+  async appendTenantIdFilter(
     currentUserProfile: UserProfile | undefined,
     request: Request | undefined,
-    filter: any): object | undefined {
+    filter: any): Promise<object | undefined> {
     debug('addTenantIdFilter: filter=', JSON.stringify(filter));
-    const tenantId: number = this.getUserPermittedTenantId(currentUserProfile, request);
+    const tenantId: number = await this.getUserPermittedTenantId(currentUserProfile, request);
 
 
     let filterModified: any;
@@ -393,12 +508,12 @@ findOneNoTenantIdFilter
 
   }
 
-  appendTenantIdWhere(
+  async appendTenantIdWhere(
     currentUserProfile: UserProfile | undefined,
     request: Request | undefined,
-    where: any): object | undefined {
+    where: any): Promise<object | undefined> {
     debug('appendTenantIdWhere: where=', JSON.stringify(where));
-    const tenantId: number = this.getUserPermittedTenantId(currentUserProfile, request);
+    const tenantId: number = await this.getUserPermittedTenantId(currentUserProfile, request);
 
     let whereModified: any;
 

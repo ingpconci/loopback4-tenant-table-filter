@@ -43,43 +43,95 @@ export class MultitenantJwtService implements TokenService {
 
       debug('verifyToken: decodedToken=', JSON.stringify(decodedToken, undefined, 4));
       // console.log('JwtService.verifyToken: decodedToken=', decodedToken)
-
       /*
-      Get the tenantId from Header
-      */
-      let tenantIdString;
-      let tenantId: number = -1;
+      {
+        "id":"4",
+        "name":"Firstname Surname",
+        "defaultTenantId":1,
+        "permittedTenants":[
+        {
+            "tenantId":0,
+            "tenantName":"APPLICATION",
+            "roles":["ADMINISTRATOR"]
+        },
+        {
+            "tenantId":1,
+            "tenantName":"TENANT1",
+            "roles":["ADMINISTRATOR","USER"]
+        },
+        ],
+        "iat":1673115321,
+        "exp":1673151321
+      }*/
+
+      //------------------------------------------------------------------------
+      // Get the tenantId from request Header: x-tenant-id
+      //------------------------------------------------------------------------
+      let tenantIdString: string;
+      let tenantId = -1;
       if (this.request) {
         debug('verifyToken: request.headers=', this.request.headers);
         tenantIdString = this.request.headers['x-tenant-id'] as string;
-        debug('verifyToken: tenantIdString=', tenantIdString);
+        debug('verifyToken: headers => tenantIdString=', tenantIdString);
 
-        tenantId = Number.parseInt(tenantIdString);
+        if (tenantIdString !== undefined && tenantIdString.length > 0) {
+          tenantId = Number.parseInt(tenantIdString);
+          debug('verifyToken: headers tenantId=', tenantId);
+          if (Number.isNaN(tenantId)) {
+            const errorMsg = 'Error: tenantId from request Header Not Valid!';
+            console.error('verifyToken: ', errorMsg);
+            //throw new HttpErrors.BadRequest(errorMsg);
+          }
+        }
+      }
+
+      //------------------------------------------------------------------------
+      // if tenantId non present in the header, check the token payload for defaultTenantId
+      //------------------------------------------------------------------------
+      if (tenantId === -1 && decodedToken.defaultTenantId !== undefined) {
+        tenantId = Number.parseInt(decodedToken.defaultTenantId);
         if (Number.isNaN(tenantId)) {
-          const errorMsg = 'TenantId Filter Not Valid!';
+          const errorMsg = 'Error: defaultTenantId from token Not Valid!';
           console.error('verifyToken: ', errorMsg);
           //throw new HttpErrors.BadRequest(errorMsg);
         }
-      } else {
+        debug('verifyToken: decodedToken.defaultTenantId => tenantId=', tenantId);
+      }
+
+
+      //------------------------------------------------------------------------
+      // Check the validity of tenantId
+      //------------------------------------------------------------------------
+      if (tenantId < 0) {
         const errorMsg = 'TenantId Filter Not Valid!';
         console.error('verifyToken: ', errorMsg);
-        //throw new HttpErrors.BadRequest(errorMsg);
+        throw new HttpErrors.BadRequest(errorMsg);
       }
 
       //------------------------------------------------------------------------
-      // Get the roles for the currentTenantId
+      // Check the permission of tenantId and the roles for the currentTenantId
       //------------------------------------------------------------------------
+      let tenantIdIsPermitted = false;
       let currentTenantUserRoles: string[] = [];
+      // eslint-disable-next-line @typescript-eslint/prefer-for-of
       for (let index = 0; index < decodedToken.permittedTenants.length; index++) {
         const permittedTenant: PermittedTenant = decodedToken.permittedTenants[index];
         debug('verifyToken: permittedTenant=', permittedTenant);
-        if (permittedTenant.tenantId == tenantId && permittedTenant.roles) {
+        if (permittedTenant.tenantId === tenantId) {
           debug('verifyToken: current selected permittedTenant=', permittedTenant);
-          currentTenantUserRoles = currentTenantUserRoles.concat(permittedTenant.roles);
+          tenantIdIsPermitted = true;
+          if (permittedTenant.roles) {
+            currentTenantUserRoles = currentTenantUserRoles.concat(permittedTenant.roles);
+          }
         }
       }
-
+      if (tenantIdIsPermitted === false) {
+        const errorMsg = 'TenantId Filter Not Permitted for User Id=' + decodedToken.id;
+        console.error('verifyToken: ', errorMsg);
+        throw new HttpErrors.BadRequest(errorMsg);
+      }
       debug('verifyToken: currentTenantUserRoles=', currentTenantUserRoles);
+
 
       // don't copy over  token field 'iat' and 'exp', nor 'email' to user profile
       userProfile = Object.assign(
